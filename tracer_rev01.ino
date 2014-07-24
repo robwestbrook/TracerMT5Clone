@@ -107,10 +107,10 @@ long lastTime = 0;          // last time of poll
 // time variables used throughout program
 // !!-- SET DATE HERE --!!
 // hr,min,sec,day,month,year
-int setHour = 21;            // set time to this hour
-int setMinute = 00;          // set time to this minute
+int setHour = 16;            // set time to this hour
+int setMinute = 06;          // set time to this minute
 int setSecond = 0;           // set time to this second
-int setDay = 22;             // set time to this day
+int setDay = 23;             // set time to this day
 int setMonth = 7;            // set time to this month
 int setYear = 2014;          // set time to this year
 // !!-- SET DATE HERE --!!
@@ -600,22 +600,6 @@ bool doWatts(float panel_voltage, float panel_current) {
   averageWatts = totalWatts/wattSample;          // average the watts
   wattSeconds = averageWatts * wattElapsedTime;  // average X time
   wattHours = wattSeconds/3600;                  // seconds divided by 3600 (number of seconds in an hour)
-  Serial.print("wattSample = ");
-  Serial.println(wattSample);
-  Serial.print("wattTime = ");
-  Serial.println(wattTime);
-  Serial.print("now = ");
-  Serial.println(now());
-  Serial.print("wattElapsedTime = ");
-  Serial.println(wattElapsedTime);
-  Serial.print("totalWatts = ");
-  Serial.println(totalWatts);
-  Serial.print("averageWatts = ");
-  Serial.println(averageWatts);
-  Serial.print("wattSeconds = ");
-  Serial.println(wattSeconds);
-  Serial.print("wattHours = ");
-  Serial.println(wattHours);
 }
 
 /*********************************
@@ -706,11 +690,6 @@ void isAmPm(int col, int row) {
 **                              **
 *********************************/
 bool checkForNewDay() {
-  Serial.println("In checkForNewDay!!");
-  Serial.print("currentDay = ");
-  Serial.println(currentDay);
-  Serial.print("systemDay = ");
-  Serial.println(systemDay);
   if(currentDay != systemDay) {
     doNewDay();
   }
@@ -743,7 +722,6 @@ bool doNewDayWatts() {
   wattElapsedTime = 0;                    // a new day so reset elapsed time
   wattTime = now();                       // a new day so get new seconds reading
   wattDay = systemDay;                    // set to new day 
-  Serial.println("In doNewDayWatts!!");
 }
 
 /*********************************
@@ -759,6 +737,5 @@ bool doNewDayAmps() {
   ampSample = 0;                          // a new day so start over samples
   ampElapsedTime = 0;                     // a new day so reset elapsed time
   ampTime = now();                        // a new day so get new seconds reading
-  ampDay = systemDay;                     // set to new day 
-  Serial.println("In doNewDayAmps!!");
+  ampDay = systemDay;                     // set to new day
 }
