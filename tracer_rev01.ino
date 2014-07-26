@@ -722,6 +722,10 @@ bool doNewDayWatts() {
   wattElapsedTime = 0;                    // a new day so reset elapsed time
   wattTime = now();                       // a new day so get new seconds reading
   wattDay = systemDay;                    // set to new day 
+  totalWatts = 0.0;                       // set for new day
+  averageWatts = 0.0;                     // set for new day
+  wattSeconds = 0.0;                      // set for new day
+  wattHours = 0.0;                        // set for new day
 }
 
 /*********************************
@@ -738,4 +742,7 @@ bool doNewDayAmps() {
   ampElapsedTime = 0;                     // a new day so reset elapsed time
   ampTime = now();                        // a new day so get new seconds reading
   ampDay = systemDay;                     // set to new day
+  totalAmps = 0.0;                        // set for new day
+  averageAmps = 0.0;                      // set for new day
+  ampHours = 0.0;                         // set for new day
 }
