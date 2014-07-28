@@ -107,10 +107,10 @@ long lastTime = 0;          // last time of poll
 // time variables used throughout program
 // !!-- SET DATE HERE --!!
 // hr,min,sec,day,month,year
-int setHour = 16;            // set time to this hour
-int setMinute = 06;          // set time to this minute
+int setHour = 19;            // set time to this hour
+int setMinute = 17;          // set time to this minute
 int setSecond = 0;           // set time to this second
-int setDay = 23;             // set time to this day
+int setDay = 26;             // set time to this day
 int setMonth = 7;            // set time to this month
 int setYear = 2014;          // set time to this year
 // !!-- SET DATE HERE --!!
@@ -167,6 +167,7 @@ void setup() {
   lcd.begin(20, 4);            // start up LCD
   keypad.begin();              // start up keypad
   setTime(setHour,setMinute,setSecond,setDay,setMonth,setYear); // hr,min,sec,day,month,year
+  
 }
 
 /*********************************
