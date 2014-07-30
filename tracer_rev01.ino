@@ -1,11 +1,11 @@
-/*
- * An interface for the Tracer Solar Charge Controller
- * A Tracer MT-5 Display Clone
- * -->  Tracer Comm Code originally from https://github.com/xxv/tracer
- * -->  by Steve Pomeroy (XXV)
- * By Rob Westbrook
- * 2014
- */
+/*************************************************************************
+ ** An interface for the Tracer Solar Charge Controller                  **
+ ** A Tracer MT-5 Display Clone                                          **
+ ** -->  Tracer Comm Code originally from https://github.com/xxv/tracer  **
+ ** -->  by Steve Pomeroy (XXV)                                          **
+ ** By Rob Westbrook                                                     **
+ ** 2014                                                                 **
+ *************************************************************************/
 
 // use software serial communication with tracer
 #include <SoftwareSerial.h>
@@ -108,10 +108,10 @@ long lastTime = 0;          // last time of poll
 // time variables used throughout program
 // !!-- SET DATE HERE --!!
 // hr,min,sec,day,month,year
-int setHour = 19;            // set time to this hour
-int setMinute = 17;          // set time to this minute
+int setHour = 16;            // set time to this hour
+int setMinute = 06;          // set time to this minute
 int setSecond = 0;           // set time to this second
-int setDay = 26;             // set time to this day
+int setDay = 23;             // set time to this day
 int setMonth = 7;            // set time to this month
 int setYear = 2014;          // set time to this year
 // !!-- SET DATE HERE --!!
@@ -129,8 +129,9 @@ time_t currentDay;          // tracks current day to compare for new day
 int firstRun = 1;           // used for all start up functions
 
 // variables used for eeprom addresses
-int kwMemAddr = 350;      // address where daily kilowatt total is stored
-int ahMemAddr = 360;      // address where daily amp hour total is stored
+const int memBase = 350;    // this is the beginning address for all EEPROM reads and writes
+int kwMemAddr;              // address where daily kilowatt total is stored
+int ahMemAddr;              // address where daily amp hour total is stored
 
 // keypad  variables
 char keyBuff[10];        // buffer for keypad input - 7 digits plus \0
@@ -169,6 +170,17 @@ void setup() {
   keypad.begin();              // start up keypad
   setTime(setHour,setMinute,setSecond,setDay,setMonth,setYear); // hr,min,sec,day,month,year
   
+  EEPROM.setMemPool(memBase, EEPROMSizeUno);    // set EEPROM memory base address
+  kwMemAddr = EEPROM.getAddress(sizeof(float)); // get address for total KW storage
+  ahMemAddr = EEPROM.getAddress(sizeof(float)); // get address for total AH storage
+  /***********************************
+  ** Uncomment to reset total       **
+  ** amp hours and watt hours       **
+  ** stored in EEPRON memory        **
+  ***********************************/
+  //float input = 0.0;
+  //EEPROM.writeFloat(kwMemAddr, input);
+  //EEPROM.writeFloat(ahMemAddr, input);
 }
 
 /*********************************
@@ -881,15 +893,11 @@ bool doNewDay() {
 bool doNewDayWatts() {
   pastWH = EEPROM.readFloat(kwMemAddr);   // read stored WH total
   totalWH = pastWH + wattHours;           // add today's watt hours with stored total
-  EEPROM.updateFloat(kwMemAddr, totalWH); // save total watt hours
+  EEPROM.writeFloat(kwMemAddr, totalWH); // save total watt hours
   wattSample = 0;                         // a new day so start over samples
   wattElapsedTime = 0;                    // a new day so reset elapsed time
   wattTime = now();                       // a new day so get new seconds reading
-<<<<<<< HEAD
-  wattDay = systemDay;                    // set to new day 
-=======
   wattDay = systemDay;                    // set to new day
->>>>>>> develop
   totalWatts = 0.0;                       // set for new day
   averageWatts = 0.0;                     // set for new day
   wattSeconds = 0.0;                      // set for new day
@@ -905,7 +913,11 @@ bool doNewDayWatts() {
 bool doNewDayAmps() {
   pastAH = EEPROM.readFloat(ahMemAddr);   // read stored AH total
   totalAH = pastAH + ampHours;            // add today's watt hours with stored total
-  EEPROM.updateFloat(ahMemAddr, totalAH); // save total watt hours
+  EEPROM.writeFloat(ahMemAddr, totalAH); // save total watt hours
+  Serial.print("Past AH = ");
+  Serial.println(pastAH);
+  Serial.print("Total AH = ");
+  Serial.println(totalAH);
   ampSample = 0;                          // a new day so start over samples
   ampElapsedTime = 0;                     // a new day so reset elapsed time
   ampTime = now();                        // a new day so get new seconds reading
