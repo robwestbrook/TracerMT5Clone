@@ -3,6 +3,9 @@
  ** A Tracer MT-5 Display Clone                                          **
  ** -->  Tracer Comm Code originally from https://github.com/xxv/tracer  **
  ** -->  by Steve Pomeroy (XXV)                                          **
+ ** -->  Also more research and data on communicating with the Tracer    **
+ ** -->  can be found at: http://blog.lekermeur.net/?p=2052              **
+ ** -->  (web page in French)                                            **
  ** By Rob Westbrook                                                     **
  ** 2014                                                                 **
  *************************************************************************/
@@ -26,7 +29,7 @@
 #include <EEPROMVar.h>
 #include <EEPROMex.h>
 
-// create softeare serial port - digital pins 2 and 3
+// create software serial port - digital pins 2 and 3
 // Pin 3 = receive; Pin 2 = transmit
 SoftwareSerial myserial(3, 2); // RX, TX
 
@@ -102,7 +105,7 @@ time_t ampElapsedTime = 0;  // time past since new day began
 int ampSample = 0;          // counts program loops
 
 // timing variables
-long interval = 5000;       // interval between tracer polls
+long interval = 5000;       // interval between tracer polls: 5000 = 5 seconds
 long lastTime = 0;          // last time of poll
 
 // time variables used throughout program
@@ -127,6 +130,7 @@ time_t systemYear;          // the year of system time
 time_t currentDay;          // tracks current day to compare for new day
 
 int firstRun = 1;           // used for all start up functions
+int currentHour;            // track hour - write totals to EEPROM hourly
 
 // variables used for eeprom addresses
 const int memBase = 350;    // this is the beginning address for all EEPROM reads and writes
@@ -134,8 +138,8 @@ int kwMemAddr;              // address where daily kilowatt total is stored
 int ahMemAddr;              // address where daily amp hour total is stored
 
 // keypad  variables
-char keyBuff[10];        // buffer for keypad input - 7 digits plus \0
-char keyHold[10];        // array to transfer buffer contents into before clearing
+char keyBuff[10];        // buffer for keypad input - 9 digits plus \0
+char keyHold[10];        // array to transfer buffer contents into for processing
 char lastKey = '*';      // track the last key pressed
 int keyCnt = 0;          // counter
 int x = 0;               // used in loops
@@ -169,14 +173,16 @@ void setup() {
   lcd.begin(20, 4);            // start up LCD
   keypad.begin();              // start up keypad
   setTime(setHour,setMinute,setSecond,setDay,setMonth,setYear); // hr,min,sec,day,month,year
-  
+  // EEPROM setup
   EEPROM.setMemPool(memBase, EEPROMSizeUno);    // set EEPROM memory base address
   kwMemAddr = EEPROM.getAddress(sizeof(float)); // get address for total KW storage
   ahMemAddr = EEPROM.getAddress(sizeof(float)); // get address for total AH storage
+  pastWH = EEPROM.readFloat(kwMemAddr);         // read stored WH total
+  pastAH = EEPROM.readFloat(ahMemAddr);         // read stored AH total
   /***********************************
   ** Uncomment to reset total       **
   ** amp hours and watt hours       **
-  ** stored in EEPRON memory        **
+  ** stored in EEPROM memory        **
   ***********************************/
   //float input = 0.0;
   //EEPROM.writeFloat(kwMemAddr, input);
@@ -196,7 +202,7 @@ void loop() {
   // check for any keypad input
   doCheckKeyPad();
   
-  // if the interval time has passed do tracer poll
+  // if the interval time has passed gather and display tracer info
   if(currentTime - lastTime > interval) {
     lastTime = currentTime;        // save current time for comparison next time
   
@@ -208,6 +214,7 @@ void loop() {
   
     pollLCDIcon(1);                 // turn on polling icon
    
+    // set all time variables
     if(doTime()) {                 // Step A
       lcd.setCursor(5,3);
       lcd.print("A");
@@ -215,13 +222,15 @@ void loop() {
       lcd.setCursor(5,3);          // or error
       lcd.print("?");
     }
+    // check to see if we're beginning a new day
     if(checkForNewDay()) {         // Step B
       lcd.setCursor(6,3);
       lcd.print("B");
     } else {
       lcd.setCursor(6,3);          // or error
       lcd.print("?");
-    }  
+    }
+    // send start bytes and id
     if(sendPollSync()) {           // Step C
       lcd.setCursor(7,3);          // send start data and id
       lcd.print("C");
@@ -229,6 +238,7 @@ void loop() {
       lcd.setCursor(7,3);          // or error
       lcd.print("?");
     }
+    // send command bytes
     if(sendPollCmd()) {            // Step D
       lcd.setCursor(8,3);          // send command
       lcd.print("D");
@@ -236,6 +246,7 @@ void loop() {
       lcd.setCursor(8,3);          // or error
       lcd.print("?");
     }
+    // read returned data
     if(read = readPollData()) {    // Step E
       lcd.setCursor(9,3);          // read data from Tracer
       lcd.print("E");
@@ -243,6 +254,7 @@ void loop() {
       lcd.setCursor(9,3);          // or error
       lcd.print("?");
     }
+    // process data into appropriate variables
     if(processPollData()) {        // Step F
       lcd.setCursor(10,3);         // process received data
       lcd.print("F");
@@ -250,6 +262,7 @@ void loop() {
       lcd.setCursor(10,3);         // or error
       lcd.print("?");
     }
+    // update main screen
     if(doMainScreen()) {           // Step G
       lcd.setCursor(11,3);         // display data
       lcd.print("G"); 
@@ -257,6 +270,7 @@ void loop() {
       lcd.setCursor(11,3);         // or error
       lcd.print("?");
     }
+    // calculate watts
     if(doWatts(pv, charge_current)) {  // Step H
       lcd.setCursor(12,3);
       lcd.print("H");
@@ -264,6 +278,7 @@ void loop() {
       lcd.setCursor(12,3);         // or error
       lcd.print("?");
     }
+    // calculate amps
     if(doAmps(charge_current)) {   // Step I
       lcd.setCursor(13,3);
       lcd.print("I");
@@ -271,11 +286,21 @@ void loop() {
       lcd.setCursor(13,3);         // or error
       lcd.print("?");
     }
+    // update clock on main screen
     if(doDisplayTime()) {          // Step J
       lcd.setCursor(14,3);
       lcd.print("J");
     } else {
       lcd.setCursor(14,3);         // or error
+      lcd.print("?");
+    }
+    
+    // check for new hour and write data to EEPROM
+    if(doNewHour()) {              // Step K
+      lcd.setCursor(15,3);
+      lcd.print("K");
+    } else {
+      lcd.setCursor(15,3);         // or error
       lcd.print("?");
     }
     
@@ -473,7 +498,7 @@ bool doCheckKeyPad() {
       case '0':
         doScreenTime();       // display Set Time screen
         break;
-      default:
+      default:                // do nothing with any other key press
         break;
     }
   } 
@@ -526,17 +551,13 @@ bool doMainScreen(){
 **                              **
 *********************************/
 void doScreenA() {
-  //unsigned long nowTime = millis();  // get time for calculating length this screen is shown
-  //do {
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Load A:");
-    displayData(load_current,7,0,2);
-    lcd.setCursor(0,2);
-    lcd.print("Batt Full V:");
-    displayData(battery_max,12,2,2);
-    //nowTime = nowTime + millis();
-  //} while (nowTime - startTime < interval);  // display until time is greater than interval
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Load A:");
+  displayData(load_current,7,0,2);
+  lcd.setCursor(0,1);
+  lcd.print("Batt Full V:");
+  displayData(battery_max,12,1,2);
 }
 
 /*********************************
@@ -546,31 +567,27 @@ void doScreenA() {
 **                              **
 *********************************/
 void doScreenB() {
-  //unsigned long nowTime = millis();  // get time for calculating length this screen is shown
-  //do {
-    lcd.clear();
-    lcd.setCursor(4,0);
-    lcd.print("Load Status");
-    lcd.setCursor(0,1);
-    lcd.print("LoadOn:");
-    lcd.setCursor(7,1);
-    lcd.print(loadOnOff ? "Y" : "N" );
-    lcd.setCursor(9,1);
-    lcd.print("LoadI:");
-    displayData(load_current,15,1,2);
-    lcd.setCursor(0,2);
-    lcd.print("Overload:");
-    lcd.setCursor(9,2);
-    lcd.print(loadOverload ? "Y" : "N" );
-    lcd.setCursor(11,2);
-    lcd.print("Short:");
-    lcd.setCursor(17,2);
-    lcd.print(loadShort ? "Y" : "N" );
-    lcd.setCursor(0,3);
-    lcd.print("Cutoff V:");
-    displayData(over_discharge,9,3,2);
-    //nowTime = nowTime + millis();
-  //} while (nowTime - startTime < interval);  // display until time is greater than interval
+  lcd.clear();
+  lcd.setCursor(4,0);
+  lcd.print("Load Status");
+  lcd.setCursor(0,1);
+  lcd.print("LoadOn:");
+  lcd.setCursor(7,1);
+  lcd.print(loadOnOff ? "Y" : "N" );
+  lcd.setCursor(9,1);
+  lcd.print("LoadI:");
+  displayData(load_current,15,1,2);
+  lcd.setCursor(0,2);
+  lcd.print("Overload:");
+  lcd.setCursor(9,2);
+  lcd.print(loadOverload ? "Y" : "N" );
+  lcd.setCursor(11,2);
+  lcd.print("Short:");
+  lcd.setCursor(17,2);
+  lcd.print(loadShort ? "Y" : "N" );
+  lcd.setCursor(0,3);
+  lcd.print("Cutoff V:");
+  displayData(over_discharge,9,3,2);
 }
 
 /*********************************
@@ -580,29 +597,25 @@ void doScreenB() {
 **                              **
 *********************************/
 void doScreenC() {
-  //unsigned long nowTime = millis();  // get time for calculating length this screen is shown
-  //do {
-    lcd.clear();
-    lcd.setCursor(3,0);
-    lcd.print("Battery Status");
-    lcd.setCursor(0,1);
-    lcd.print("Charging:");
-    lcd.setCursor(9,1);
-    lcd.print(charging ? "Y" : "N" );
-    lcd.setCursor(12,1);
-    lcd.print("Full:");
-    lcd.setCursor(17,1);
-    lcd.print(full ? "Y" : "N" );
-    lcd.setCursor(0,2);
-    lcd.print("Discharged:");
-    lcd.setCursor(11,2);
-    lcd.print(batteryOverDischarge ? "Y" : "N" );
-    lcd.setCursor(0,3);
-    lcd.print("Temp:");
-    float battery_f = battery_temp + 30;
-    displayData(battery_f,6,3,1);
-    //nowTime = nowTime + millis();
-  //} while (nowTime - startTime < interval);  // display until time is greater than interval
+  lcd.clear();
+  lcd.setCursor(3,0);
+  lcd.print("Battery Status");
+  lcd.setCursor(0,1);
+  lcd.print("Charging:");
+  lcd.setCursor(9,1);
+  lcd.print(charging ? "Y" : "N" );
+  lcd.setCursor(12,1);
+  lcd.print("Full:");
+  lcd.setCursor(17,1);
+  lcd.print(full ? "Y" : "N" );
+  lcd.setCursor(0,2);
+  lcd.print("Discharged:");
+  lcd.setCursor(11,2);
+  lcd.print(batteryOverDischarge ? "Y" : "N" );
+  lcd.setCursor(0,3);
+  lcd.print("Temp:");
+  float battery_f = battery_temp + 30;
+  displayData(battery_f,6,3,1);
 }
 
 /*********************************
@@ -612,25 +625,33 @@ void doScreenC() {
 **                              **
 *********************************/
 void doScreenD() {
-  //unsigned long nowTime = millis();  // get time for calculating length this screen is shown
-  //do {
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("WH Today:");
-    displayData(wattHours,9,0,1);
-    lcd.setCursor(0,1);
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("WH Today:");
+  displayData(wattHours,9,0,1);
+  lcd.setCursor(0,1);
+  float tempWH = wattHours + EEPROM.readFloat(kwMemAddr);
+  if(tempWH > 999.9) {                   // adjust for kilowatt hours
+    tempWH = tempWH / 1000.0;
+    lcd.print("Total KW:");
+    displayData(tempWH,9,1,1);
+  } else {
     lcd.print("Total WH:");
-    float tempWH = wattHours + EEPROM.readFloat(kwMemAddr);
     displayData(tempWH,9,1,0);
-    lcd.setCursor(0,2);
-    lcd.print("AH Today:");
-    displayData(ampHours,9,2,1);
-    lcd.setCursor(0,3);
+  }
+  lcd.setCursor(0,2);
+  lcd.print("AH Today:");
+  displayData(ampHours,9,2,1);
+  lcd.setCursor(0,3);
+  float tempAH = ampHours + EEPROM.readFloat(ahMemAddr);
+  if(tempAH > 999.9) {                   // adjust for kiloamp hours
+    tempAH = tempAH / 1000.0;
+    lcd.print("Total KA:");
+    displayData(tempAH,9,1,1);
+  } else {
     lcd.print("Total AH:");
-    float tempAH = ampHours + EEPROM.readFloat(ahMemAddr);
-    displayData(tempAH,9,3,0);
-    //nowTime = nowTime + millis();
-  //} while (nowTime - startTime < interval);  // display until time is greater than interval  
+    displayData(tempAH,9,1,0);
+  }
 }
 
 /*********************************
@@ -643,30 +664,30 @@ void doScreenD() {
 **                              **
 *********************************/
 void doScreenTime() {
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print("Current Time & Date");
-    addZero(systemHour,0,1);          // the hour
-    lcd.setCursor(2,1);
-    lcd.print(":");
-    addZero(systemMinute,3,1);        // the minute
-    lcd.setCursor(5,1);
-    lcd.print(":");
-    addZero(systemSecond,6,1);        // the second
-    lcd.setCursor(0,2);
-    addZero(systemMonth,0,2);         // the month
-    lcd.setCursor(2,2);
-    lcd.print("/");
-    addZero(systemDay,3,2);           // the day
-    lcd.setCursor(5,2);
-    lcd.print("/");
-    addZero(systemYear,6,2);          // the year
-    lcd.setCursor(0,3);
-    lcd.print("Press A to set time"); // A is the key to set time
-    char key = keypad.waitForKey();   // wait for a key to be pressed
-    if (key == 'A') {                 // if A is pressed
-      doSetTime();                    // set time
-    }
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Current Time & Date");
+  addZero(systemHour,0,1);          // the hour
+  lcd.setCursor(2,1);
+  lcd.print(":");
+  addZero(systemMinute,3,1);        // the minute
+  lcd.setCursor(5,1);
+  lcd.print(":");
+  addZero(systemSecond,6,1);        // the second
+  lcd.setCursor(0,2);
+  addZero(systemMonth,0,2);         // the month
+  lcd.setCursor(2,2);
+  lcd.print("/");
+  addZero(systemDay,3,2);           // the day
+  lcd.setCursor(5,2);
+  lcd.print("/");
+  addZero(systemYear,6,2);          // the year
+  lcd.setCursor(0,3);
+  lcd.print("Press A to set time"); // A is the key to set time
+  char key = keypad.waitForKey();   // wait for a key to be pressed
+  if (key == 'A') {                 // if A is pressed
+    doSetTime();                    // set time
+  }
 }
 
 /*********************************
@@ -893,7 +914,13 @@ bool doNewDay() {
 bool doNewDayWatts() {
   pastWH = EEPROM.readFloat(kwMemAddr);   // read stored WH total
   totalWH = pastWH + wattHours;           // add today's watt hours with stored total
-  EEPROM.writeFloat(kwMemAddr, totalWH); // save total watt hours
+  EEPROM.writeFloat(kwMemAddr, totalWH);  // save total watt hours
+  Serial.print("kwMemAddr = ");
+  Serial.println(kwMemAddr);
+  Serial.print("Past WH = ");
+  Serial.println(pastWH);
+  Serial.print("Total WH = ");
+  Serial.println(totalWH);
   wattSample = 0;                         // a new day so start over samples
   wattElapsedTime = 0;                    // a new day so reset elapsed time
   wattTime = now();                       // a new day so get new seconds reading
@@ -912,12 +939,9 @@ bool doNewDayWatts() {
 *********************************/
 bool doNewDayAmps() {
   pastAH = EEPROM.readFloat(ahMemAddr);   // read stored AH total
-  totalAH = pastAH + ampHours;            // add today's watt hours with stored total
-  EEPROM.writeFloat(ahMemAddr, totalAH); // save total watt hours
-  Serial.print("Past AH = ");
-  Serial.println(pastAH);
-  Serial.print("Total AH = ");
-  Serial.println(totalAH);
+  totalAH = pastAH + ampHours;            // add today's amp hours with stored total
+  EEPROM.writeFloat(ahMemAddr, totalAH);  // save total amp hours
+  
   ampSample = 0;                          // a new day so start over samples
   ampElapsedTime = 0;                     // a new day so reset elapsed time
   ampTime = now();                        // a new day so get new seconds reading
@@ -925,4 +949,22 @@ bool doNewDayAmps() {
   totalAmps = 0.0;                        // set for new day
   averageAmps = 0.0;                      // set for new day
   ampHours = 0.0;                         // set for new day
+}
+
+/*********************************
+**                              **
+** FUNCTION THAT SAVES DATA TO  **
+** EEPROM EVERY HOUR            **
+**                              **
+*********************************/
+bool doNewHour() {
+  if(currentHour != systemHour) {
+    pastWH = EEPROM.readFloat(kwMemAddr);   // read stored WH total
+    totalWH = pastWH + wattHours;           // add today's watt hours with stored total
+    EEPROM.writeFloat(kwMemAddr, totalWH);  // save total watt hours
+    pastAH = EEPROM.readFloat(ahMemAddr);   // read stored AH total
+    totalAH = pastAH + ampHours;            // add today's amp hours with stored total
+    EEPROM.writeFloat(ahMemAddr, totalAH);  // save total amp hours
+    currentHour = systemHour;               // set current hour to system hour
+  }
 }
