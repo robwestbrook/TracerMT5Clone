@@ -85,8 +85,10 @@ float totalWatts = 0.0;     // running total of watts for the day
 float averageWatts = 0.0;   // average watts
 float wattSeconds = 0.0;    // average watts times elapsed time
 float wattHours = 0.0;      // wattSeconds divided by 3600
+float currentWH = 0.0;      // holds watt hours for each hour - used in writing to EEPROM each hour
 float pastWH = 0.0;         // holds EEPROM reading
 float totalWH = 0.0;        // writes to EEPROM
+float writeWH = 0.0;        // actual data to write to EEPROM
 time_t wattTime = 0;        // beginning time at start of day
 time_t wattDay = 0;         // day number
 time_t wattElapsedTime = 0; // time past since new day began
@@ -97,8 +99,10 @@ float totalAmps = 0.0;      // running total of amps for the day
 float averageAmps = 0.0;    // average amps
 float ampSeconds = 0.0;     // average amps times elapsed time
 float ampHours = 0.0;       // ampSeconds divided by 3600
+float currentAH = 0.0;      // holds amp hours for each hour - used in writing to EEPROM each hour
 float pastAH = 0.0;         // holds EEPROM reading
 float totalAH = 0.0;        // writes to EEPROM
+float writeAH = 0.0;        // actual data to write to EEPROM
 time_t ampTime = 0;         // beginning time at start of day
 time_t ampDay = 0;          // day number
 time_t ampElapsedTime = 0;  // time past since new day began
@@ -647,10 +651,10 @@ void doScreenD() {
   if(tempAH > 999.9) {                   // adjust for kiloamp hours
     tempAH = tempAH / 1000.0;
     lcd.print("Total KA:");
-    displayData(tempAH,9,1,1);
+    displayData(tempAH,9,3,1);
   } else {
     lcd.print("Total AH:");
-    displayData(tempAH,9,1,0);
+    displayData(tempAH,9,3,0);
   }
 }
 
@@ -958,13 +962,17 @@ bool doNewDayAmps() {
 **                              **
 *********************************/
 bool doNewHour() {
-  if(currentHour != systemHour) {
+  if(currentHour != systemHour) {           // if hour has changed
     pastWH = EEPROM.readFloat(kwMemAddr);   // read stored WH total
     totalWH = pastWH + wattHours;           // add today's watt hours with stored total
-    EEPROM.writeFloat(kwMemAddr, totalWH);  // save total watt hours
+    currentWH = totalWH - pastWH;           // this hour's WH = total - past
+    writeWH = currentWH + pastWH;           // total to write to EEPROM is current WH plus stored WH
+    EEPROM.writeFloat(kwMemAddr, writeWH);  // save total watt hours
     pastAH = EEPROM.readFloat(ahMemAddr);   // read stored AH total
     totalAH = pastAH + ampHours;            // add today's amp hours with stored total
-    EEPROM.writeFloat(ahMemAddr, totalAH);  // save total amp hours
-    currentHour = systemHour;               // set current hour to system hour
+    currentAH = totalAH - pastAH;           // this hour's AH = total - past
+    writeAH = currentAH + pastAH;           // total to write to EEPROM is current AH plus stored AH
+    EEPROM.writeFloat(ahMemAddr, writeAH);  // save total amp hours
+    currentHour = systemHour;               // reset current hour to be equal to system hour
   }
 }
