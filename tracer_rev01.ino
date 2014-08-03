@@ -85,28 +85,26 @@ float totalWatts = 0.0;     // running total of watts for the day
 float averageWatts = 0.0;   // average watts
 float wattSeconds = 0.0;    // average watts times elapsed time
 float wattHours = 0.0;      // wattSeconds divided by 3600
-float currentWH = 0.0;      // holds watt hours for each hour - used in writing to EEPROM each hour
-float pastWH = 0.0;         // holds EEPROM reading
-float totalWH = 0.0;        // writes to EEPROM
 float writeWH = 0.0;        // actual data to write to EEPROM
 time_t wattTime = 0;        // beginning time at start of day
 time_t wattDay = 0;         // day number
 time_t wattElapsedTime = 0; // time past since new day began
 int wattSample = 0;         // counts program loops
+float hourWH = 0.0;         // watts for the current hour
+float startupWH = 0.0;      // stores EEPROM data at start up and start of each day
 
 // amp hour variables
 float totalAmps = 0.0;      // running total of amps for the day
 float averageAmps = 0.0;    // average amps
 float ampSeconds = 0.0;     // average amps times elapsed time
 float ampHours = 0.0;       // ampSeconds divided by 3600
-float currentAH = 0.0;      // holds amp hours for each hour - used in writing to EEPROM each hour
-float pastAH = 0.0;         // holds EEPROM reading
-float totalAH = 0.0;        // writes to EEPROM
 float writeAH = 0.0;        // actual data to write to EEPROM
 time_t ampTime = 0;         // beginning time at start of day
 time_t ampDay = 0;          // day number
 time_t ampElapsedTime = 0;  // time past since new day began
 int ampSample = 0;          // counts program loops
+float hourAH = 0.0;         // amps for the current hour
+float startupAH = 0.0;      // stores EEPROM data at start up and start of each day
 
 // timing variables
 long interval = 5000;       // interval between tracer polls: 5000 = 5 seconds
@@ -133,7 +131,6 @@ time_t systemMonth;         // the month of system time
 time_t systemYear;          // the year of system time
 time_t currentDay;          // tracks current day to compare for new day
 
-int firstRun = 1;           // used for all start up functions
 int currentHour;            // track hour - write totals to EEPROM hourly
 
 // variables used for eeprom addresses
@@ -181,8 +178,6 @@ void setup() {
   EEPROM.setMemPool(memBase, EEPROMSizeUno);    // set EEPROM memory base address
   kwMemAddr = EEPROM.getAddress(sizeof(float)); // get address for total KW storage
   ahMemAddr = EEPROM.getAddress(sizeof(float)); // get address for total AH storage
-  pastWH = EEPROM.readFloat(kwMemAddr);         // read stored WH total
-  pastAH = EEPROM.readFloat(ahMemAddr);         // read stored AH total
   /***********************************
   ** Uncomment to reset total       **
   ** amp hours and watt hours       **
@@ -191,6 +186,9 @@ void setup() {
   //float input = 0.0;
   //EEPROM.writeFloat(kwMemAddr, input);
   //EEPROM.writeFloat(ahMemAddr, input);
+  startupWH = EEPROM.readFloat(kwMemAddr);      // read stored WH total
+  startupAH = EEPROM.readFloat(ahMemAddr);      // read stored AH total
+  
 }
 
 /*********************************
@@ -226,81 +224,80 @@ void loop() {
       lcd.setCursor(5,3);          // or error
       lcd.print("?");
     }
-    // check to see if we're beginning a new day
-    if(checkForNewDay()) {         // Step B
+    // check for new hour and write data to EEPROM
+    if(doNewHour()) {              // Step B
       lcd.setCursor(6,3);
       lcd.print("B");
     } else {
-      lcd.setCursor(6,3);          // or error
+      lcd.setCursor(6,3);         // or error
       lcd.print("?");
     }
-    // send start bytes and id
-    if(sendPollSync()) {           // Step C
-      lcd.setCursor(7,3);          // send start data and id
+    // check to see if we're beginning a new day
+    if(checkForNewDay()) {         // Step C
+      lcd.setCursor(7,3);
       lcd.print("C");
     } else {
       lcd.setCursor(7,3);          // or error
       lcd.print("?");
     }
-    // send command bytes
-    if(sendPollCmd()) {            // Step D
-      lcd.setCursor(8,3);          // send command
+    // send start bytes and id
+    if(sendPollSync()) {           // Step D
+      lcd.setCursor(8,3);          // send start data and id
       lcd.print("D");
     } else {
       lcd.setCursor(8,3);          // or error
       lcd.print("?");
     }
-    // read returned data
-    if(read = readPollData()) {    // Step E
-      lcd.setCursor(9,3);          // read data from Tracer
+    // send command bytes
+    if(sendPollCmd()) {            // Step E
+      lcd.setCursor(9,3);          // send command
       lcd.print("E");
     } else {
       lcd.setCursor(9,3);          // or error
       lcd.print("?");
     }
-    // process data into appropriate variables
-    if(processPollData()) {        // Step F
-      lcd.setCursor(10,3);         // process received data
+    // read returned data
+    if(read = readPollData()) {    // Step F
+      lcd.setCursor(10,3);         // read data from Tracer
       lcd.print("F");
     } else {
       lcd.setCursor(10,3);         // or error
       lcd.print("?");
     }
-    // update main screen
-    if(doMainScreen()) {           // Step G
-      lcd.setCursor(11,3);         // display data
-      lcd.print("G"); 
+    // process data into appropriate variables
+    if(processPollData()) {        // Step G
+      lcd.setCursor(11,3);         // process received data
+      lcd.print("G");
     } else {
       lcd.setCursor(11,3);         // or error
       lcd.print("?");
     }
-    // calculate watts
-    if(doWatts(pv, charge_current)) {  // Step H
-      lcd.setCursor(12,3);
-      lcd.print("H");
+    // update main screen
+    if(doMainScreen()) {           // Step H
+      lcd.setCursor(12,3);         // display data
+      lcd.print("H"); 
     } else {
       lcd.setCursor(12,3);         // or error
       lcd.print("?");
     }
-    // calculate amps
-    if(doAmps(charge_current)) {   // Step I
+    // calculate watts
+    if(doWatts(pv, charge_current)) {  // Step I
       lcd.setCursor(13,3);
       lcd.print("I");
     } else {
       lcd.setCursor(13,3);         // or error
       lcd.print("?");
     }
-    // update clock on main screen
-    if(doDisplayTime()) {          // Step J
+    // calculate amps
+    if(doAmps(charge_current)) {   // Step J
       lcd.setCursor(14,3);
       lcd.print("J");
     } else {
       lcd.setCursor(14,3);         // or error
       lcd.print("?");
     }
-    
-    // check for new hour and write data to EEPROM
-    if(doNewHour()) {              // Step K
+    // update clock on main screen
+    if(doDisplayTime()) {          // Step K
       lcd.setCursor(15,3);
       lcd.print("K");
     } else {
@@ -545,7 +542,12 @@ bool doMainScreen(){
   lcd.setCursor(0,2);
   lcd.print("Wt:");
   float watts = (pv * charge_current);
-  displayData(watts,3,2,1);   
+  displayData(watts,3,2,1);
+
+  lcd.setCursor(18,0);
+  lcd.print(buff[read - 2], HEX);
+  lcd.setCursor(18,1);
+  lcd.print(buff[read - 1], HEX);  
 }
 
 /*********************************
@@ -916,15 +918,7 @@ bool doNewDay() {
 **                              **
 *********************************/
 bool doNewDayWatts() {
-  pastWH = EEPROM.readFloat(kwMemAddr);   // read stored WH total
-  totalWH = pastWH + wattHours;           // add today's watt hours with stored total
-  EEPROM.writeFloat(kwMemAddr, totalWH);  // save total watt hours
-  Serial.print("kwMemAddr = ");
-  Serial.println(kwMemAddr);
-  Serial.print("Past WH = ");
-  Serial.println(pastWH);
-  Serial.print("Total WH = ");
-  Serial.println(totalWH);
+  doNewHour();
   wattSample = 0;                         // a new day so start over samples
   wattElapsedTime = 0;                    // a new day so reset elapsed time
   wattTime = now();                       // a new day so get new seconds reading
@@ -933,6 +927,8 @@ bool doNewDayWatts() {
   averageWatts = 0.0;                     // set for new day
   wattSeconds = 0.0;                      // set for new day
   wattHours = 0.0;                        // set for new day
+  hourWH = 0.0;                           // set for new day
+  startupWH = EEPROM.readFloat(kwMemAddr);// new starting point for new day
 }
 
 /*********************************
@@ -942,10 +938,6 @@ bool doNewDayWatts() {
 **                              **
 *********************************/
 bool doNewDayAmps() {
-  pastAH = EEPROM.readFloat(ahMemAddr);   // read stored AH total
-  totalAH = pastAH + ampHours;            // add today's amp hours with stored total
-  EEPROM.writeFloat(ahMemAddr, totalAH);  // save total amp hours
-  
   ampSample = 0;                          // a new day so start over samples
   ampElapsedTime = 0;                     // a new day so reset elapsed time
   ampTime = now();                        // a new day so get new seconds reading
@@ -953,6 +945,8 @@ bool doNewDayAmps() {
   totalAmps = 0.0;                        // set for new day
   averageAmps = 0.0;                      // set for new day
   ampHours = 0.0;                         // set for new day
+  hourAH = 0.0;                           // set for new day
+  startupAH = EEPROM.readFloat(ahMemAddr);// new starting point for new day 
 }
 
 /*********************************
@@ -962,17 +956,19 @@ bool doNewDayAmps() {
 **                              **
 *********************************/
 bool doNewHour() {
-  if(currentHour != systemHour) {           // if hour has changed
-    pastWH = EEPROM.readFloat(kwMemAddr);   // read stored WH total
-    totalWH = pastWH + wattHours;           // add today's watt hours with stored total
-    currentWH = totalWH - pastWH;           // this hour's WH = total - past
-    writeWH = currentWH + pastWH;           // total to write to EEPROM is current WH plus stored WH
-    EEPROM.writeFloat(kwMemAddr, writeWH);  // save total watt hours
-    pastAH = EEPROM.readFloat(ahMemAddr);   // read stored AH total
-    totalAH = pastAH + ampHours;            // add today's amp hours with stored total
-    currentAH = totalAH - pastAH;           // this hour's AH = total - past
-    writeAH = currentAH + pastAH;           // total to write to EEPROM is current AH plus stored AH
-    EEPROM.writeFloat(ahMemAddr, writeAH);  // save total amp hours
-    currentHour = systemHour;               // reset current hour to be equal to system hour
+  if(currentHour != systemHour) {                // if hour has changed
+    hourWH = wattHours - hourWH;                 // subtract last hour's watt hours from the day's watt hours
+    writeWH = startupWH + hourWH;                // add this hour's watt hours to startupWH
+    if(writeWH > EEPROM.readFloat(kwMemAddr)) {  // if watt hours has changed then write - to save unnecessary EEPROM writes
+      EEPROM.writeFloat(kwMemAddr, writeWH);     // save total watt hours
+    }
+    hourAH = ampHours - hourAH;                  // subtract last hour's amp hours from the day's amp hours
+    writeAH = startupAH + hourAH;                // add this hour's amp hours to startupAH
+    if(writeAH > EEPROM.readFloat(ahMemAddr)) {
+      EEPROM.writeFloat(ahMemAddr, writeAH);     // save total amp hours
+    }
+    hourWH = wattHours;                          // set hourWH to current watt hours
+    hourAH = ampHours;                           // set hourAH to current amp hours
+    currentHour = systemHour;                    // reset current hour to be equal to system hour
   }
 }
