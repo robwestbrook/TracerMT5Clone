@@ -636,7 +636,7 @@ void doScreenD() {
   lcd.print("WH Today:");
   displayData(wattHours,9,0,1);
   lcd.setCursor(0,1);
-  float tempWH = wattHours + EEPROM.readFloat(kwMemAddr);
+  float tempWH = startupWH + wattHours;
   if(tempWH > 999.9) {                   // adjust for kilowatt hours
     tempWH = tempWH / 1000.0;
     lcd.print("Total KW:");
@@ -649,7 +649,7 @@ void doScreenD() {
   lcd.print("AH Today:");
   displayData(ampHours,9,2,1);
   lcd.setCursor(0,3);
-  float tempAH = ampHours + EEPROM.readFloat(ahMemAddr);
+  float tempAH = startupAH + ampHours;
   if(tempAH > 999.9) {                   // adjust for kiloamp hours
     tempAH = tempAH / 1000.0;
     lcd.print("Total KA:");
