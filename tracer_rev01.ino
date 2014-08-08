@@ -29,13 +29,31 @@
 #include <EEPROMVar.h>
 #include <EEPROMex.h>
 
+// include libraries for nrf24l01 radio usage
+#include <SPI.h>
+#include "nRF24L01.h"
+#include "RF24.h"
+#include "printf.h"
+
+// Set up nRF24L01 radio on SPI bus plus pins 9 & 10
+RF24 radio(9,10);
+
+// Radio pipe addresses for the 2 nodes to communicate.
+const uint64_t pipes[1] = { 0xF0F0F0F0E1LL };
+
+// LED on digital pin 4 to indicate radio transmit
+int ledPin = 4;
+
+// buffer for transmitting data over NRF24L01
+byte dataBuff[32];
+
 // create software serial port - digital pins 2 and 3
 // Pin 3 = receive; Pin 2 = transmit
 SoftwareSerial myserial(3, 2); // RX, TX
 
 // setup LCD pins
 // pins used to shift register for LCD
-ShiftLCD lcd(10,12,11);
+ShiftLCD lcd(5,7,6);
 
 // Tracer communication syncronization head
 uint8_t start[] = { 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xEB, 0x90, 0xEB, 0x90, 0xEB, 0x90 };
@@ -109,7 +127,7 @@ float todayAH = 0.0;        // amps for current day
 float memAH = 0.0;          // used to write amps to EEPROM
 
 // timing variables
-long interval = 5000;       // interval between tracer polls: 5000 = 5 seconds
+long interval = 5000;       // interval between tracer polls: 5000 = 5 seconds and 10000 = 10 seconds
 long lastTime = 0;          // last time of poll
 
 // time variables used throughout program
@@ -188,6 +206,30 @@ void setup() {
   //float input = 0.0;
   //EEPROM.writeFloat(kwMemAddr, input);
   //EEPROM.writeFloat(ahMemAddr, input);
+
+  // for radio ** probably can remove **
+  printf_begin();
+
+  // start radio
+  radio.begin();
+
+  // sets delay between retries and number of reties
+  radio.setRetries(15,15);
+
+  // payload size in bytes
+  radio.setPayloadSize(32);
+
+  // set radio data speed
+  radio.setDataRate(RF24_250KBPS);
+  
+  // open the pipe to send data on
+  radio.openWritingPipe(pipes[0]);
+
+  // start listening for transmission
+  radio.startListening();
+
+  // print radio details ** can remove **
+  radio.printDetails();
 }
 
 /*********************************
@@ -271,36 +313,46 @@ void loop() {
       lcd.setCursor(11,3);         // or error
       lcd.print("?");
     }
-    // update main screen
-    if(doMainScreen()) {           // Step H
-      lcd.setCursor(12,3);         // display data
-      lcd.print("H"); 
+
+    // transmit data over NRF24L01 to base
+    if(transmitData()) {           // Step H
+      lcd.setCursor(12,3);         // transmit data to base
+      lcd.print("H");
     } else {
       lcd.setCursor(12,3);         // or error
       lcd.print("?");
     }
-    // calculate watts
-    if(doWatts(pv, charge_current)) {  // Step I
-      lcd.setCursor(13,3);
-      lcd.print("I");
+
+    // update main screen
+    if(doMainScreen()) {           // Step I
+      lcd.setCursor(13,3);         // display data
+      lcd.print("I"); 
     } else {
       lcd.setCursor(13,3);         // or error
       lcd.print("?");
     }
-    // calculate amps
-    if(doAmps(charge_current)) {   // Step J
+    // calculate watts
+    if(doWatts(pv, charge_current)) {  // Step J
       lcd.setCursor(14,3);
       lcd.print("J");
     } else {
       lcd.setCursor(14,3);         // or error
       lcd.print("?");
     }
-    // update clock on main screen
-    if(doDisplayTime()) {          // Step K
+    // calculate amps
+    if(doAmps(charge_current)) {   // Step K
       lcd.setCursor(15,3);
       lcd.print("K");
     } else {
       lcd.setCursor(15,3);         // or error
+      lcd.print("?");
+    }
+    // update clock on main screen
+    if(doDisplayTime()) {          // Step L
+      lcd.setCursor(16,3);
+      lcd.print("L");
+    } else {
+      lcd.setCursor(16,3);         // or error
       lcd.print("?");
     }
     
@@ -473,6 +525,29 @@ bool processPollData() {
 
 /*********************************
 **                              **
+** FUNCTION TO TRANSMIT DATA    **
+** OVER NRF24L01 RADIO TO THE   **
+** BASE STATION                 **
+**                              **
+*********************************/
+bool transmitData() {
+  digitalWrite(ledPin, HIGH);                      // turn on LED to indicate transmitting
+  radio.stopListening();                           // stop radio listening - can't transmit while listening
+  for(int z = 0; z < 32; z++){                     // load up data buffer with values from status buffer
+    dataBuff[z] = buff[z];                         
+    Serial.println(z);
+  }
+  if(radio.write( &dataBuff, sizeof(dataBuff) )) { // send data
+    Serial.println("Write successful");            // transmit successful
+  } else {
+    Serial.println("Write failed");                // transmit failed
+  }
+  radio.startListening();                          // start listening once transmission is done
+  digitalWrite(ledPin, LOW);                       // turn off LED now that transmission is done
+}
+
+/*********************************
+**                              **
 ** FUNCTION THAT PROCESSES ANY  **
 ** KEY AND DISPLAYS             **
 ** CORRESPONDING SCREEN         **
@@ -542,11 +617,6 @@ bool doMainScreen(){
   lcd.print("Wt:");
   float watts = (pv * charge_current);
   displayData(watts,3,2,1);
-
-  lcd.setCursor(18,0);
-  lcd.print(buff[read - 3], HEX);
-  lcd.setCursor(18,1);
-  lcd.print(buff[read - 2], HEX);  
 }
 
 /*********************************
@@ -725,7 +795,7 @@ bool doSetTime() {
   lcd.setCursor(5,2);
   lcd.print("/");
   addZero(tempYear,6,2);
-  // set the processor time ad date to new time and date
+  // set the processor time and date to new time and date
   setTime(tempHour,tempMinute,tempSecond,tempDay,tempMonth,tempYear);
   char key = keypad.waitForKey();    // clear on any key press
 }
